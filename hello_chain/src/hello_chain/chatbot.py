@@ -1,52 +1,87 @@
 import os
+from dotenv import load_dotenv
+from typing import cast
 import chainlit as cl
-
-from agents import Agent, OpenAIChatCompletionsModel, Runner
+from openai.types.responses import ResponseTextDeltaEvent
+from agents import Agent, Runner, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from agents.run import RunConfig
-from dotenv import load_dotenv,find_dotenv
 
-load_dotenv(find_dotenv())
+# Load the environment variables from the .env file
+load_dotenv()
+
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-# Step 1 Provider
-provider = AsyncOpenAI(
-    api_key=gemini_api_key,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-    )
+# Check if the API key is present; if not, raise an error
+if not gemini_api_key:
+    raise ValueError("GEMINI_API_KEY is not set. Please ensure it is defined in your .env file.")
 
-# Step 2 Model
-model = OpenAIChatCompletionsModel(
-    model="gemini-1.5-flash",
-    openai_client=provider
-)
-
-config = RunConfig(
-    model=model,
-    tracing_disabled=True
-)
-
-# Step 3 Agent
-agent = Agent(
-    instructions="You are a helpful assistant that can answer questions and help with tasks.",
-    name="support_agent",
-    )
 
 @cl.on_chat_start
-async def handle_chat_start():
-    cl.user_session.set("history",[])
-    await cl.Message(content="Hello! I'm Support Agent, How may I help you.").send()
+async def start():
+    #Reference: https://ai.google.dev/gemini-api/docs/openai
+    external_client = AsyncOpenAI(
+        api_key=gemini_api_key,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+
+    model = OpenAIChatCompletionsModel(
+        model="gemini-2.0-flash",
+        openai_client=external_client
+    )
+
+    config = RunConfig(
+        model=model,
+        tracing_disabled=True
+    )
+    """Set up the chat session when a user connects."""
+    # Initialize an empty chat history in the session.
+    cl.user_session.set("chat_history", [])
+
+    cl.user_session.set("config", config)
+    agent: Agent = Agent(name="Assistant", instructions="You are a helpful assistant", model=model)
+    cl.user_session.set("agent", agent)
+
+    await cl.Message(content="Welcome to the Panaversity AI Assistant! How can I help you today?").send()
 
 @cl.on_message
-async def on_message(message: cl.Message):
-    history = cl.user_session.get("history") or []
-    
-    history.append({"role":"user","content":message.content})
-    result = await Runner.run(
-        starting_agent=agent,
-        input=message.content,
-        run_config=config
-    )
-    history.append({"role":"assistant","content":result.final_output})
-    cl.user_session.set("history",history)
-    await cl.Message(content=result.final_output).send()
+async def main(message: cl.Message):
+    """Process incoming messages and generate responses."""
+    # Retrieve the chat history from the session.
+    history = cl.user_session.get("chat_history") or []
+
+    # Append the user's message to the history.
+    history.append({"role": "user", "content": message.content})
+
+    # Create a new message object for streaming
+    msg = cl.Message(content="")
+    await msg.send()
+
+    agent: Agent = cast(Agent, cl.user_session.get("agent"))
+    config: RunConfig = cast(RunConfig, cl.user_session.get("config"))
+
+    try:
+        print("\n[CALLING_AGENT_WITH_CONTEXT]\n", history, "\n")
+        # Run the agent with streaming enabled
+        result = Runner.run_streamed(agent, history, run_config=config)
+
+        # Stream the response token by token
+        async for event in result.stream_events():
+            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                token = event.data.delta
+                await msg.stream_token(token)
+
+        # Append the assistant's response to the history.
+        history.append({"role": "assistant", "content": msg.content})
+
+        # Update the session with the new history.
+        cl.user_session.set("chat_history", history)
+
+        # Optional: Log the interaction
+        print(f"User: {message.content}")
+        print(f"Assistant: {msg.content}")
+
+    except Exception as e:
+        msg.content = f"Error: {str(e)}"
+        await msg.update()
+        print(f"Error: {str(e)}")
