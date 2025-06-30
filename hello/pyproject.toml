@@ -1,0 +1,29 @@
+# This section defines the core project metadata
+[project]
+# The name of the project
+name = "hello"
+# The current version of the project
+version = "0.1.0"
+# A short description of the project
+description = "Add your description here"
+# The README file for the project
+readme = "README.md"
+# List of authors for the project
+authors = [
+    { name = "MuhammadZeeshan14", email = "96916917+MuhammadZeeshan14@users.noreply.github.com" }
+]
+# The required Python version
+requires-python = ">=3.13"
+# List of dependencies required by the project
+dependencies = []
+
+# This section defines command-line scripts provided by the project
+[project.scripts]
+# The 'hello' command will call the 'main' function in the 'hello' module
+hello = "hello:main"
+
+# This section defines the build system requirements
+[build-system]
+# The build backend and its requirements
+requires = ["hatchling"]
+build-backend = "hatchling.build"

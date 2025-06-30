@@ -1,0 +1,20 @@
+[project]
+name = "hello-chain"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "MuhammadZeeshan14", email = "96916917+MuhammadZeeshan14@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "chainlit>=2.5.5",
+    "openai-agents>=0.1.0",
+]
+
+[project.scripts]
+hello-chain = "hello_chain:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
